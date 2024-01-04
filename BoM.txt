@@ -1,0 +1,54 @@
+Partlist exported from C:/Users/hansj/Documents/EAGLE/projects/Spar7_rebuild/Spar7_rebuild.sch at 1/4/2024 7:44 PM
+
+Part    Value                                 Device                                Package                   Description 
+
+C1      10uF 20V 0805                         CAPACITOR0805                         CAP_0805                              
+C2      22uF 10V 1206                         CAPACITOR1206                         CAP_1206                              
+C3      10uF 0805                             CAPACITOR0805                         CAP_0805                              
+C4      10uF 0805                             CAPACITOR0805                         CAP_0805                              
+C5      0.1uF 0805                            CAPACITOR0805                         CAP_0805                              
+
+D5      STTH1002CSF                           DIODESTTH1002CSF                      DIODE_STTH1002CSF                     
+
+L1      NR3015T2R2M                           NR3015T2R2M                           IND_TAIYO_NR3015_TAY                  
+R1      100k                                  RESISTOR0402                          RES_0402                              
+R2      Beregn fra 3.3                        RESISTOR0402                          RES_0402                              
+R3      Beregn fra 12                         RESISTOR0402                          RES_0402                              
+R4      Beregn fra 5                          RESISTOR0402                          RES_0402                              
+R6      10k 0402                              RESISTOR0402                          RES_0402                              
+R7      10k 0402                              RESISTOR0402                          RES_0402                              
+R8      10k 0402                              RESISTOR0402                          RES_0402                              
+R9      10k 0402                              RESISTOR0402                          RES_0402                              
+R10     10k 0402                              RESISTOR0402                          RES_0402                              
+R11     10k 0402                              RESISTOR0402                          RES_0402                              
+R12     10k 0402                              RESISTOR0402                          RES_0402                              
+R13     10k 0402                              RESISTOR0402                          RES_0402                              
+R14     10k 0402                              RESISTOR0402                          RES_0402                              
+R16     510ohm 1/4W 402                       RESISTOR0402                          RES_0402                              
+R17     510ohm 1/4W 402                       RESISTOR0402                          RES_0402                              
+R18     510ohm 1/4W 402                       RESISTOR0402                          RES_0402                              
+R19     510ohm 1/4W 402                       RESISTOR0402                          RES_0402                              
+R20     510ohm 1/4W 402                       RESISTOR0402                          RES_0402                              
+R21     510ohm 1/4W 402                       RESISTOR0402                          RES_0402                              
+R22     510ohm 1/4W 402                       RESISTOR0402                          RES_0402                              
+
+RELAY   G5PZ-1A_RELAY                         G5PZ-1A_RELAY                         G5PZ-1A_RELAY                         
+S1      SWITCH_PTS645                         SWITCH_PTS645                         SWITCH_PTS645_EE_NBIOT_01             
+
+U1      TPS62172DSGR                          TPS62173DSGR                          DSG8_1P6X0P9                          
+U3      ESP32-S3-WROOM-1U-N16R8               ESP32-S3-WROOM-1U-N16R8               ESP32­S3­WROOM­1U_EXP                 
+U4      CP2102N-A02-GQFN20QFN20_CP2102N_SIL-L CP2102N-A02-GQFN20QFN20_CP2102N_SIL-L QFN20_CP2102N_SIL-L                   
+U5      CD4511BNSR                            CD4511BNSR                            NS16                                  
+U6      ULN2003D1013TR                        ULN2003D1013TR                        SO16-NARROW                           
+
+3.3V    150120BS75000                         LED150120BS75000                      150120BS75000                         
+12V     150120BS75000                         LED150120BS75000                      150120BS75000                         
+USB     150120BS75000                         LED150120BS75000                      150120BS75000                         
+
+
+J1      MOLEX-39532-1002                      MOLEX-39532-1002                      MOLEX-39532-1002                      
+J2      SPAR7_REWIRED_TERM_BLOCK              SPAR7_REWIRED_TERM_BLOCK              SPAR7_REWIRED_TERM_BLOCK              
+J3      MOLEX-39532-1002                      MOLEX-39532-1002                      MOLEX-39532-1002                      
+J4      10118192-0001LF                       USB_RCPT_10118192-0001LF              USB_RCPT_10118192-0001LF              
+
+DISPLAY ELS-1005IDR-SA10-21EWA                ELS-1005IDR-SA10-21EWA                ELS-1005IDR-SA10-21EWA                
