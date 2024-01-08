@@ -1,30 +1,51 @@
-/*
- * SPDX-FileCopyrightText: 2010-2022 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: CC0-1.0
- */
-
 #include <stdio.h>
 #include <inttypes.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "esp_system.h"
 #include "driver/gpio.h"
+#include "sys/time.h"
+#include "filesystem.h"
 
 /*
-    GPIO Output
+    CD4511BNSR BCD truth table {A,B,C,D}
 */
-const int GPIO_BCD_A = 8;
-const int GPIO_BCD_B = 9;
-const int GPIO_BCD_C = 10;
-const int GPIO_BCD_D = 11;
+int BCD_matrix[11][4] = {
+    {0, 0, 0, 0}, // 0
+    {1, 0, 0, 0}, // 1
+    {0, 1, 0, 0}, // 2
+    {1, 1, 0, 0}, // 3
+    {0, 0, 1, 0}, // 4
+    {1, 0, 1, 0}, // 5
+    {0, 1, 1, 0}, // 6
+    {1, 1, 1, 0}, // 7
+    {0, 0, 0, 1}, // 8
+    {1, 0, 0, 1}, // 9
+    {1, 1, 1, 1}, // blank
+};
+
+const uint64_t debounce_limit_us = 1000000;
+uint64_t gpio_last_triggered_us[10] = {0,0,0,0,0,0,0,0,0,0};
+
+
+/*
+    Output
+*/
+const int GPIO_BCD_BASE = 8;
+const int GPIO_BCD_A = GPIO_BCD_BASE;
+const int GPIO_BCD_B = GPIO_BCD_BASE+1;
+const int GPIO_BCD_C = GPIO_BCD_BASE+2;
+const int GPIO_BCD_D = GPIO_BCD_BASE+3;
 const int GPIO_RELAY = 12;
 
+#define GPIO_OUTPUT_PIN_SEL  ((1ULL<<GPIO_BCD_BASE) | (1ULL<<GPIO_BCD_A) | (1ULL<<GPIO_BCD_B) | (1ULL<<GPIO_BCD_C) | (1ULL<<GPIO_BCD_D) | (1ULL<<GPIO_RELAY))
+
 /*
-    GPIO Input
+    Input
 */
 const int GPIO_EXT = 1;
 const int GPIO_HOPPER = 2;
@@ -34,120 +55,142 @@ const int GPIO_PAY4 = 5;
 const int GPIO_PAY3 = 6;
 const int GPIO_PAY2 = 7;
 
+#define GPIO_INPUT_PIN_SEL  ((1ULL<<GPIO_EXT) | (1ULL<<GPIO_HOPPER) | (1ULL<<GPIO_COIN_EXIT) | (1ULL<<GPIO_PAY7) | (1ULL<<GPIO_PAY4) | (1ULL<<GPIO_PAY3) | (1ULL<<GPIO_PAY2))
 
-/*
-TODO: Neste versjon
+#define ESP_INTR_FLAG_DEFAULT 0
 
-Strapping pin: GPIO0, GPIO2, GPIO5, GPIO12 (MTDI), and GPIO15 (MTDO) are strapping pins. For more infomation, please refer to ESP32 datasheet.
+static QueueHandle_t gpio_evt_queue = NULL;
 
-SPI0/1: GPIO6-11 and GPIO16-17 are usually connected to the SPI flash and PSRAM integrated on the module and therefore should not be used for other purposes.
+struct _gpio_event 
+{
+    uint32_t gpio_num;
+    int64_t timestamp_us;
+} gpio_event;
 
-JTAG: GPIO12-15 are usually used for inline debug.
+int payout = 0;
 
-GPI: GPIO34-39 can only be set as input mode and do not have software-enabled pullup or pulldown functions.
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+    struct _gpio_event e;
+    e.gpio_num = (uint32_t) arg;
 
-TXD & RXD are usually used for flashing and debugging.
+    struct timeval tv_now;
+    gettimeofday(&tv_now, NULL);
+    e.timestamp_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
 
-ADC2: ADC2 pins cannot be used when Wi-Fi is used. So, if you are having trouble getting the value from an ADC2 GPIO while using Wi-Fi, you may consider using an ADC1 GPIO instead, which should solve your problem. For more details, please refer to Hardware Limitations of ADC Continuous Mode and Hardware Limitations of ADC Oneshot Mode.
-
-Please do not use the interrupt of GPIO36 and GPIO39 when using ADC or Wi-Fi and Bluetooth with sleep mode enabled. Please refer to ESP32 ECO and Workarounds for Bugs > Section 3.11 for the detailed description of the issue.
-
-app_main() {
-	gpio_config_t io_conf;
-	io_conf.intr_type = GPIO_INTR_DISABLE;
-	io_conf.mode = GPIO_MODE_OUTPUT;
-	io_conf.pin_bit_mask = GPIO_BIT_MASK;
-	io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-	io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-	gpio_config(&io_conf);
+    xQueueSendFromISR(gpio_evt_queue, &e, NULL);
 }
 
-*/
+static void gpio_task(void* arg)
+{
+    printf("GPIO Task is running.\n");
+    struct _gpio_event e;
+    for (;;) 
+    {
+        if (xQueueReceive(gpio_evt_queue, &e, portMAX_DELAY)) 
+        {
+            if (e.timestamp_us - gpio_last_triggered_us[e.gpio_num] > debounce_limit_us)
+            {
+                printf("GPIO[%"PRIu32"] intr, val: %d\n", e.gpio_num, gpio_get_level(e.gpio_num));
+                gpio_last_triggered_us[e.gpio_num] = e.timestamp_us;
 
-/*
-    IO1     EXT
-    IO2     HOPPER
-    IO3     COIN_EXIT
-    IO4     PAY7
-    IO5     PAY4
-    IO6     PAY3
-    IO7     PAY2
-    IO8     BCD A
-    IO9     BCD B
-    IO10    BCD C
-    IO11    BCD D
-    IO12    RELAY
+                switch (e.gpio_num)
+                {
+                    case GPIO_EXT: printf("EXT\n"); break;
+                    case GPIO_HOPPER: printf("Hopper\n"); break;
+                    case GPIO_COIN_EXIT: printf("Coin exit\n"); break;
+                    case GPIO_PAY7: printf("Pay 7\n"); break;
+                    case GPIO_PAY4: printf("Pay 4\n"); break;
+                    case GPIO_PAY3: printf("Pay 3\n"); break;
+                    case GPIO_PAY2: printf("Pay 2\n"); break;
+                }
+            }
+            
+        }
+    }
+}
 
+void configure_gpio_output() 
+{
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en = 0;
+    gpio_config(&io_conf);    
+}
 
-    CD4511BNSR truth table:
+void configure_gpio_input()
+{
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_POSEDGE;
+    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_up_en = 1;
+    gpio_config(&io_conf);
+}
 
-    DCBA
-    0000    0
-    0001    1
-    0010    2
-    0011    3
-    0100    4
-    0101    5
-    0110    6
-    0111    7
-    1000    8
-    1001    9
-    1111    blank
-
-    (inverted through ULN2003A)
-
-*/ 
+void display_digit(int digit)
+{
+    for (int i=0; i<4; i++)
+    {
+        gpio_set_level(GPIO_BCD_BASE+i, !BCD_matrix[digit][i]);
+    }
+}
 
 void init_gpio()
 {
+    configure_gpio_input();
+    configure_gpio_output();
+}
 
-    // Output
-    gpio_set_direction(GPIO_BCD_A, GPIO_MODE_OUTPUT);
-    gpio_set_direction(GPIO_BCD_B, GPIO_MODE_OUTPUT);
-    gpio_set_direction(GPIO_BCD_C, GPIO_MODE_OUTPUT);
-    gpio_set_direction(GPIO_BCD_D, GPIO_MODE_OUTPUT);
-    gpio_set_direction(GPIO_RELAY, GPIO_MODE_OUTPUT);
-
-    // Input
-
-    gpio_set_direction(GPIO_EXT, GPIO_MODE_INPUT);
-    gpio_set_direction(GPIO_HOPPER, GPIO_MODE_INPUT);
-    gpio_set_direction(GPIO_COIN_EXIT, GPIO_MODE_INPUT);
-    gpio_set_direction(GPIO_PAY7, GPIO_MODE_INPUT);
-    gpio_set_direction(GPIO_PAY4, GPIO_MODE_INPUT);
-    gpio_set_direction(GPIO_PAY3, GPIO_MODE_INPUT);
-    gpio_set_direction(GPIO_PAY2, GPIO_MODE_INPUT);
-
+void print_welcome_message()
+{
+    printf("S7 rewired v.1.0 running.\n");
+    printf("-------------------------\n");
 }
 
 
 void app_main(void)
 {
+    // Initialize file system
+    initialize_spiffs();
+
+    // Initialize GPIO
     init_gpio();
+    //create a queue to handle gpio event from isr
+    gpio_evt_queue = xQueueCreate(10, sizeof(gpio_event));
+    //start gpio task
+    xTaskCreate(gpio_task, "gpio_task", 2048, NULL, 10, NULL);
 
-//    DCBA
-//    0000    0
+    //install gpio isr service
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+    //hook isr handler for gpio pins
+    gpio_isr_handler_add(GPIO_EXT, gpio_isr_handler, (void*) GPIO_EXT);
+    gpio_isr_handler_add(GPIO_HOPPER, gpio_isr_handler, (void*) GPIO_HOPPER);
+    gpio_isr_handler_add(GPIO_COIN_EXIT, gpio_isr_handler, (void*) GPIO_COIN_EXIT);
+    gpio_isr_handler_add(GPIO_PAY7, gpio_isr_handler, (void*) GPIO_PAY7);
+    gpio_isr_handler_add(GPIO_PAY4, gpio_isr_handler, (void*) GPIO_PAY4);
+    gpio_isr_handler_add(GPIO_PAY3, gpio_isr_handler, (void*) GPIO_PAY3);
+    gpio_isr_handler_add(GPIO_PAY2, gpio_isr_handler, (void*) GPIO_PAY2);
 
-    gpio_set_level(GPIO_BCD_A, 0);
-    gpio_set_level(GPIO_BCD_B, 0);
-    gpio_set_level(GPIO_BCD_C, 0);
-    gpio_set_level(GPIO_BCD_D, 0);
+    print_welcome_message();
 
+
+    int i=0;
     while (true)
     {
-        printf("S7 rewired\n");
-        gpio_set_level(GPIO_BCD_A, 0);
-        gpio_set_level(GPIO_BCD_B, 0);
-        gpio_set_level(GPIO_BCD_C, 0);
-        gpio_set_level(GPIO_BCD_D, 0);
-        gpio_set_level(GPIO_RELAY, 0);
+        printf("\n");
+
+        display_digit(i);
+        i++;
+        if (i > 10)
+            i = 0;
+       //  gpio_set_level(GPIO_RELAY, 0);
 
         vTaskDelay(1000 / portTICK_PERIOD_MS);
-        gpio_set_level(GPIO_BCD_A, 1);
-        gpio_set_level(GPIO_BCD_B, 1);
-        gpio_set_level(GPIO_BCD_C, 1);
-        gpio_set_level(GPIO_RELAY, 1);
 
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+//        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }

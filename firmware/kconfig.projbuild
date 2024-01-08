@@ -1,7 +1,0 @@
-menu "Spool Controller Configuration"
-
-    menu "Modbus"
-        source "components/modbus/Kconfig.modbus"
-    endmenu
-
-endmenu

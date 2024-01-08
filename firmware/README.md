@@ -1,3 +1,13 @@
+TODO:
+
+* Span DTLS example: https://github.com/lab5e/dtls-mbedtls-sample/blob/main/dtls.c
+* Espressif DTLS example: https://github.com/espressif/esp-idf/blob/5524b692ee5d04d7a1000eb0c41640746fc67f3c/examples/protocols/https_mbedtls/main/https_mbedtls_example_main.c
+* Espressif SPIFFS: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/storage/spiffs.html
+
+
+
+
+
 | Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
 | ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
 
