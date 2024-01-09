@@ -1,6 +1,10 @@
 {
     "idf.adapterTargetName": "esp32s3",
     "files.associations": {
-        "slave.h": "c"
+        "slave.h": "c",
+        "bootloader_random.h": "c",
+        "log.h": "c",
+        "esp_event.h": "c",
+        "esp_sntp.h": "c"
     }
 }
