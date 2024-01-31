@@ -7,6 +7,10 @@
         "esp_event.h": "c",
         "esp_sntp.h": "c",
         "freertos.h": "c",
-        "task.h": "c"
+        "task.h": "c",
+        "inttypes.h": "c",
+        "sdkconfig.h": "c",
+        "soc.h": "c",
+        "dedic_gpio.h": "c"
     }
 }

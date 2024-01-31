@@ -8,8 +8,19 @@
 #include "esp_flash.h"
 #include "esp_system.h"
 #include "driver/gpio.h"
+#include "driver/dedic_gpio.h"
 #include "sys/time.h"
 #include "filesystem.h"
+#include "esp_log.h"
+#include "soc/soc.h"
+#include "soc/gpio_reg.h"
+
+
+// ----------------------------------------------------------------------------------------------------
+// Lesestoff: https://www.eevblog.com/forum/projects/long-wires-connecting-a-switch-to-a-processor-pin/
+// Mål frekvensen på støyen ?
+
+static const char* LOGTAG = "SPAR7";
 
 // CD4511BNSR BCD truth table {A,B,C,D}
 //
@@ -43,7 +54,7 @@ int BCD_matrix[11][4] = {
 #define MOTOR_RPM 60    
 #define HOPPER_TIMEOUT_MS (1000*MOTOR_RPM / 60) / 4
 
-const uint64_t debounce_limit_us = 250000;
+const uint64_t debounce_limit_us = 200000;
 uint64_t gpio_last_triggered_us[10] = {0,0,0,0,0,0,0,0,0,0};
 
 // Output
@@ -117,16 +128,28 @@ void configure_gpio_output()
 
 void configure_gpio_input()
 {
+    // gpio_config_t io_conf = {};
+    // io_conf.intr_type = GPIO_INTR_NEGEDGE;
+    // io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
+    // io_conf.mode = GPIO_MODE_INPUT;
+    // io_conf.pull_down_en = 0;
+    // io_conf.pull_up_en = 1;
     gpio_config_t io_conf = {};
-    io_conf.intr_type = GPIO_INTR_POSEDGE;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
     io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_down_en = 0;
     io_conf.pull_up_en = 1;
     gpio_config(&io_conf);
+
+   
+
+
 }
 
 void display_digit(int digit)
 {
+  
     for (int i=0; i<4; i++)
     {
         gpio_set_level(GPIO_BCD_BASE+i, !BCD_matrix[digit][i]);
@@ -150,50 +173,53 @@ void init_gpio()
 }
 
 
-static void IRAM_ATTR gpio_isr_handler(void* arg)
-{
-    struct _gpio_event e;
-    e.gpio_num = (uint32_t) arg;
+// static void IRAM_ATTR gpio_isr_handler(void* arg)
+// {
+//     struct _gpio_event e;
+//     e.gpio_num = (uint32_t) arg;
 
-    struct timeval tv_now;
-    gettimeofday(&tv_now, NULL);
-    e.timestamp_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
+//     struct timeval tv_now;
+//     gettimeofday(&tv_now, NULL);
+//     e.timestamp_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
 
-    xQueueSendFromISR(gpio_evt_queue, &e, NULL);
-}
+//     xQueueSendFromISR(gpio_evt_queue, &e, NULL);
+// }
 
 
 
 static void payout_task(void * arg)
 {
-    printf("Payout Task is running.\n");
+    ESP_LOGI(LOGTAG, "Payout Task is running.");
 
     struct _payout_event e;
     for (;;) 
     {
         if (xQueueReceive(payout_evt_queue, &e, portMAX_DELAY)) 
         {
-            printf("Handling payout of %d coins.\n", e.coins);
-            start_motor();
+            ESP_LOGI(LOGTAG, "Handling payout of %d coins.", e.coins);
             int payout = e.coins;
             display_digit(payout);
+            vTaskDelay(300 / portTICK_PERIOD_MS);
+            start_motor();
             uint8_t hopper_evt;
-            printf("PAYOUT: Waiting for hopper event\n");
+            ESP_LOGI(LOGTAG, "Waiting for hopper event.");
             for (int i=0; i<e.coins; i++)
             {
                 // TODO: Add timeout
-                BaseType_t ret = xQueueReceive(hopper_evt_queue, &hopper_evt,  pdMS_TO_TICKS(HOPPER_TIMEOUT_MS) /*portMAX_DELAY */);
+                // BaseType_t ret = xQueueReceive(hopper_evt_queue, &hopper_evt,  pdMS_TO_TICKS(HOPPER_TIMEOUT_MS) /*portMAX_DELAY */);
+                BaseType_t ret = xQueueReceive(hopper_evt_queue, &hopper_evt,  portMAX_DELAY);
                 if (pdTRUE == ret)
                 {
-                    printf("PAYOUT: processing hopper event\n");
+                    ESP_LOGI(LOGTAG, "processing hopper event.");
                     payout -= 1;
                     display_digit(payout);
                 }
                 else
                 {
-                    // TODO: add error routine (error codes == blanking + 8 + number + 8 + blank?)
+                    ESP_LOGW(LOGTAG, "Hopper timeout.");
                 }
             }
+            vTaskDelay(30 / portTICK_PERIOD_MS);
             stop_motor();
         }
     }
@@ -201,7 +227,7 @@ static void payout_task(void * arg)
 
 static void earnings_task(void* arg)
 {
-    printf("Earnings Task is running.\n");
+    ESP_LOGI(LOGTAG, "Earnings Task is running.");
 
     struct _earnings_event e;
     for (;;) 
@@ -215,72 +241,61 @@ static void earnings_task(void* arg)
 
             // TODO: Pack into protobuffer and send to Span
 
-            printf("Total Earnings : %d\n", total_coins_in - total_coins_out);
+            ESP_LOGI(LOGTAG, "Total Earnings : %d.", total_coins_in - total_coins_out);
         }
     }
 }
 
 static void gpio_task(void* arg)
 {
-    printf("GPIO Task is running.\n");
+    ESP_LOGI(LOGTAG, "GPIO Task is running.");
 
     struct _gpio_event gpio_evt;
     struct _earnings_event earnings_evt;
     struct _payout_event payout_evt;
     for (;;) 
     {
-        if (xQueueReceive(gpio_evt_queue, &gpio_evt, portMAX_DELAY)) 
+        if (pdTRUE == xQueueReceive(gpio_evt_queue, &gpio_evt, portMAX_DELAY)) 
         {
-            if (gpio_evt.timestamp_us - gpio_last_triggered_us[gpio_evt.gpio_num] < debounce_limit_us)
-            {
-                continue;
-            }
-            if (0 == gpio_get_level(gpio_evt.gpio_num))
-            {
-                continue;
-            }
+            // if (gpio_evt.timestamp_us - gpio_last_triggered_us[gpio_evt.gpio_num] > debounce_limit_us) /*&& (0 != gpio_get_level(gpio_evt.gpio_num)*/
+            // {
+                // ESP_LOGI(LOGTAG, "GPIO[%"PRIu32"] intr, val: %d, t: [%"PRIu64"], l:[%"PRIu64"], b:[%"PRIu64"]", gpio_evt.gpio_num, gpio_get_level(gpio_evt.gpio_num), gpio_evt.timestamp_us, gpio_last_triggered_us[gpio_evt.gpio_num], gpio_evt.timestamp_us - gpio_last_triggered_us[gpio_evt.gpio_num]);
+                ESP_LOGI(LOGTAG, "GPIO[%"PRIu32"] intr, val: %d, t: [%"PRIu64"], l:[%"PRIu64"], b:[%"PRIu64"]", gpio_evt.gpio_num, gpio_get_level(gpio_evt.gpio_num), gpio_evt.timestamp_us, gpio_last_triggered_us[gpio_evt.gpio_num], gpio_evt.timestamp_us - gpio_last_triggered_us[gpio_evt.gpio_num]);
+                // gpio_last_triggered_us[gpio_evt.gpio_num] = gpio_evt.timestamp_us;
 
-            printf("GPIO[%"PRIu32"] intr, val: %d\n", gpio_evt.gpio_num, gpio_get_level(gpio_evt.gpio_num));
-            gpio_last_triggered_us[gpio_evt.gpio_num] = gpio_evt.timestamp_us;
-
-            switch (gpio_evt.gpio_num)
-            {
-                case GPIO_EXT:          break; // Nothing hooked up to this so far
-                case GPIO_HOPPER:       printf("Hopper\n"); 
-                                        xQueueSend(hopper_evt_queue, &hopper_event, 0);
-                                        break;
-                case GPIO_COIN_EXIT:    printf("Coin exit\n"); 
-                                        earnings_evt.coins = 1;
-                                        xQueueSend(earnings_evt_queue, &earnings_evt, 0);
-                                        break;
-                case GPIO_PAY7:         printf("Pay 7\n"); 
-                                        earnings_evt.coins = -7;
-                                        xQueueSend(earnings_evt_queue, &earnings_evt, 0);
-                                        payout_evt.coins = 7;
-                                        xQueueSend(payout_evt_queue, &payout_evt, 0);
-                                        display_digit(7);
-                                        break;
-                case GPIO_PAY4:         printf("Pay 4\n"); 
-                                        earnings_evt.coins = -4;
-                                        xQueueSend(earnings_evt_queue, &earnings_evt, 0);
-                                        payout_evt.coins = 4;
-                                        xQueueSend(payout_evt_queue, &payout_evt, 0);
-                                        display_digit(4);
-                                        break;
-                case GPIO_PAY3:         printf("Pay 3\n"); 
-                                        earnings_evt.coins = -3;
-                                        xQueueSend(earnings_evt_queue, &earnings_evt, 0);
-                                        payout_evt.coins = 3;
-                                        xQueueSend(payout_evt_queue, &payout_evt, 0);
-                                        display_digit(3);
-                                        break;
-                case GPIO_PAY2:         printf("Pay 2\n"); 
-                                        earnings_evt.coins = -2;
-                                        xQueueSend(earnings_evt_queue, &earnings_evt, 0);
-                                        payout_evt.coins = 2;
-                                        xQueueSend(payout_evt_queue, &payout_evt, 0);
-                                        display_digit(2);
-                                        break;
+                switch (gpio_evt.gpio_num)
+                {
+                    case GPIO_EXT:          break; // Nothing hooked up to this so far
+                    case GPIO_HOPPER:       xQueueSend(hopper_evt_queue, &hopper_event, 0);
+                                            break;
+                    case GPIO_COIN_EXIT:    earnings_evt.coins = 1;
+                                            xQueueSend(earnings_evt_queue, &earnings_evt, 0);
+                                            break;
+                    case GPIO_PAY7:         earnings_evt.coins = -7;
+                                            xQueueSend(earnings_evt_queue, &earnings_evt, 0);
+                                            payout_evt.coins = 7;
+                                            xQueueSend(payout_evt_queue, &payout_evt, 0);
+                                            display_digit(7);
+                                            break;
+                    case GPIO_PAY4:         earnings_evt.coins = -4;
+                                            xQueueSend(earnings_evt_queue, &earnings_evt, 0);
+                                            payout_evt.coins = 4;
+                                            xQueueSend(payout_evt_queue, &payout_evt, 0);
+                                            display_digit(4);
+                                            break;
+                    case GPIO_PAY3:         earnings_evt.coins = -3;
+                                            xQueueSend(earnings_evt_queue, &earnings_evt, 0);
+                                            payout_evt.coins = 3;
+                                            xQueueSend(payout_evt_queue, &payout_evt, 0);
+                                            display_digit(3);
+                                            break;
+                    case GPIO_PAY2:         earnings_evt.coins = -2;
+                                            xQueueSend(earnings_evt_queue, &earnings_evt, 0);
+                                            payout_evt.coins = 2;
+                                            xQueueSend(payout_evt_queue, &payout_evt, 0);
+                                            display_digit(2);
+                                            break;
+                // }
             }
         }
     }
@@ -291,19 +306,19 @@ void print_welcome_message()
 {
     vTaskDelay(3000 / portTICK_PERIOD_MS);
 
-    printf("S7 rewired v.1.0 running.\n");
-    printf("-------------------------\n");
-    printf("Initial state:\n\n");
-    printf("\tGPIO task priority:       %d\n", GPIO_TASK_PRIORITY);
-    printf("\tPayout task priority:     %d\n", PAYOUT_TASK_PRIORITY);
-    printf("\tEarnings task priority:   %d\n", EARNINGS_TASK_PRIORITY);
-    printf("\n");
-    printf("\t Max gpio queue size:     %d\n", MAX_GPIO_QUEUE_SIZE);
-    printf("\t Max payout queue size:   %d\n", MAX_PAYOUT_QUEUE_SIZE);
-    printf("\t Max earnings queue size: %d\n", MAX_EARNINGS_QUEUE_SIZE);
-    printf("\n");
-    printf("\tMotor RPM:                %d\n", MOTOR_RPM);
-    printf("\tHopper timeout (ms):      %d\n", HOPPER_TIMEOUT_MS);
+    ESP_LOGI(LOGTAG, "S7 rewired v.1.0 running.");
+    ESP_LOGI(LOGTAG, "-------------------------");
+    ESP_LOGI(LOGTAG, "Initial state:\n\n");
+    ESP_LOGI(LOGTAG, "\tGPIO task priority:       %d", GPIO_TASK_PRIORITY);
+    ESP_LOGI(LOGTAG, "\tPayout task priority:     %d", PAYOUT_TASK_PRIORITY);
+    ESP_LOGI(LOGTAG, "\tEarnings task priority:   %d", EARNINGS_TASK_PRIORITY);
+    ESP_LOGI(LOGTAG, " ");
+    ESP_LOGI(LOGTAG, "\t Max gpio queue size:     %d", MAX_GPIO_QUEUE_SIZE);
+    ESP_LOGI(LOGTAG, "\t Max payout queue size:   %d", MAX_PAYOUT_QUEUE_SIZE);
+    ESP_LOGI(LOGTAG, "\t Max earnings queue size: %d", MAX_EARNINGS_QUEUE_SIZE);
+    ESP_LOGI(LOGTAG, " ");
+    ESP_LOGI(LOGTAG, "\tMotor RPM:                %d", MOTOR_RPM);
+    ESP_LOGI(LOGTAG, "\tHopper timeout (ms):      %d", HOPPER_TIMEOUT_MS);
 }
 
 
@@ -329,26 +344,102 @@ void app_main(void)
     // Create a queue to handle hopper event
     hopper_evt_queue =  xQueueCreate(MAX_HOPPER_QUEUE_SIZE, sizeof(hopper_event));
 
-    //start gpio task
-    xTaskCreate(gpio_task, "GPIO Task", 4096, NULL, GPIO_TASK_PRIORITY, NULL);
-    // start payout task
-    xTaskCreate(payout_task, "Payout Task", 4096, NULL, PAYOUT_TASK_PRIORITY, NULL);
-    // start earnings task
-    xTaskCreate(earnings_task, "Earnings Task", 4096, NULL, EARNINGS_TASK_PRIORITY, NULL);
+    // //start gpio task
+    // xTaskCreate(gpio_task, "GPIO Task", 4096, NULL, GPIO_TASK_PRIORITY, NULL);
+    // // start payout task
+    // xTaskCreate(payout_task, "Payout Task", 4096, NULL, PAYOUT_TASK_PRIORITY, NULL);
+    // // start earnings task
+    // xTaskCreate(earnings_task, "Earnings Task", 4096, NULL, EARNINGS_TASK_PRIORITY, NULL);
 
-    //install gpio isr service
-    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
-    //hook isr handler for gpio pins
-    gpio_isr_handler_add(GPIO_EXT, gpio_isr_handler, (void*) GPIO_EXT);
-    gpio_isr_handler_add(GPIO_HOPPER, gpio_isr_handler, (void*) GPIO_HOPPER);
-    gpio_isr_handler_add(GPIO_COIN_EXIT, gpio_isr_handler, (void*) GPIO_COIN_EXIT);
-    gpio_isr_handler_add(GPIO_PAY7, gpio_isr_handler, (void*) GPIO_PAY7);
-    gpio_isr_handler_add(GPIO_PAY4, gpio_isr_handler, (void*) GPIO_PAY4);
-    gpio_isr_handler_add(GPIO_PAY3, gpio_isr_handler, (void*) GPIO_PAY3);
-    gpio_isr_handler_add(GPIO_PAY2, gpio_isr_handler, (void*) GPIO_PAY2);
+    uint32_t regs = REG_READ(GPIO_IN_REG);
+    while  ((1ULL << GPIO_HOPPER) & ~regs)
+    {
+        regs = REG_READ(GPIO_IN_REG);
+        start_motor();
+    }
+    stop_motor();
 
+    
     while (true)
     {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        uint32_t regs = REG_READ(GPIO_IN_REG);
+
+        int payout = 0;
+
+        if  ((1ULL << GPIO_PAY2) & ~regs)
+            payout = 2;
+        if  ((1ULL << GPIO_PAY3) & ~regs)
+            payout = 3;
+        if  ((1ULL << GPIO_PAY4) & ~regs)
+            payout = 4;
+        if  ((1ULL << GPIO_PAY7) & ~regs)
+            payout = 7;
+
+        if  (payout != 0)
+        {
+            printf("Payout: %d\n", payout);
+            int countdown = payout;
+            display_digit(countdown);
+            
+            // Wait for coin exit
+            for (;;)
+            {
+                regs = REG_READ(GPIO_IN_REG);
+                if  ((1ULL << GPIO_COIN_EXIT) & ~regs)
+                {
+                    // Increment earnings by 1
+                    printf("Coin exit\n");
+                    break;
+                }
+                vTaskDelay(10 / portTICK_PERIOD_MS);
+            }
+
+            // Do payout
+            start_motor();
+            for (int i=0; i<payout; i++)
+            {
+                for (;;) 
+                {
+                    // wait for hopper
+                    regs = REG_READ(GPIO_IN_REG);
+                    if  ((1ULL << GPIO_HOPPER) & ~regs)
+                    {
+                        // Increment earnings by 1
+                        printf("Hopper\n");
+
+                        // Only debounce first n-1 couins
+                        if (countdown >= 1)
+                        {
+                            vTaskDelay(140 / portTICK_PERIOD_MS);
+                        }
+                        
+                        countdown--;
+                        display_digit(countdown);
+
+                        if (countdown == 0)
+                        {
+                            break;
+                        }
+                    }
+                    if (countdown == 0)
+                    {
+                        break;
+                    }
+                    vTaskDelay(1 / portTICK_PERIOD_MS);
+                }
+
+            }
+
+            // Run motor until switch opens again
+            regs = REG_READ(GPIO_IN_REG);
+            while  ((1ULL << GPIO_HOPPER) & ~regs)
+            {
+                regs = REG_READ(GPIO_IN_REG);
+            }
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            stop_motor();            
+        }
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
+

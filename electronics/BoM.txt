@@ -1,4 +1,4 @@
-Partlist exported from C:/Users/hansj/Documents/EAGLE/projects/Spar7_rebuild/Spar7_rebuild.sch at 1/4/2024 7:44 PM
+Partlist 
 
 Part    Value                                 Device                                Package                   Description 
 
@@ -51,4 +51,6 @@ J2      SPAR7_REWIRED_TERM_BLOCK              SPAR7_REWIRED_TERM_BLOCK          
 J3      MOLEX-39532-1002                      MOLEX-39532-1002                      MOLEX-39532-1002                      
 J4      10118192-0001LF                       USB_RCPT_10118192-0001LF              USB_RCPT_10118192-0001LF              
 
-DISPLAY ELS-1005IDR-SA10-21EWA                ELS-1005IDR-SA10-21EWA                ELS-1005IDR-SA10-21EWA                
+DISPLAY 7 segment common cathode display (ELS-1005IDR or equivalent)               
+
+Hopper switch: SS-5GL2-FT
