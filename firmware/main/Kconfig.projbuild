@@ -1,29 +1,6 @@
-# Kconfig file for Pill COMMS 
+# Kconfig file for Spar 7
 
 menu "COMMS configuration"
-    menu "Log levels"
-        config COMMS_LOG_LEVEL
-            int "COMM log level (0: None, 1: Error, 2: Warning, 3: Info, 4: Debug, 5: Verbose)"
-            range 0 5
-            default 3
-        config COMMS_MODEM_LOG_LEVEL
-            int "Modem log level (0: None, 1: Error, 2: Warning, 3: Info, 4: Debug, 5: Verbose)"
-            range 0 5
-            default 3
-        config COMMS_WIFI_LOG_LEVEL
-            int "Wifi log level (0: None, 1: Error, 2: Warning, 3: Info, 4: Debug, 5: Verbose)"
-            range 0 5
-            default 3
-        config COMMS_COAP_LOG_LEVEL
-            int "COAP log level (0: None, 1: Error, 2: Warning, 3: Info, 4: Debug, 5: Verbose)"
-            range 0 5
-            default 3
-        config MESSAGES_LOG_LEVEL
-            int "MESSAGES log level (0: None, 1: Error, 2: Warning, 3: Info, 4: Debug, 5: Verbose)"
-            range 0 5
-            default 3
-    endmenu
-
     config ESP_MAXIMUM_WIFI_RETRY
         int "Maximum wifi retry"
         default 5

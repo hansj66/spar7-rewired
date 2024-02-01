@@ -8,7 +8,7 @@
  * Connect the WiFi adapter. When the wifi adapter is connected and receives an IP the COMMS_WIFI_ONLINE
  * event is raised.
  */
-void wifi_connect(const char *ssid, const char *password);
+void wifi_connect();
 
 /**
  * Send and recevie WiFi data. The txbuf and txlen parameters holds the output data, 0 if there is none.

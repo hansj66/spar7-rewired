@@ -1,4 +1,3 @@
-#include "log.h"
 #include "wifi.h"
 #include "esp_log.h"
 
@@ -18,15 +17,17 @@
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
-#include "comms.h"
-// #include "pill_nvs.h"
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
 #include "esp_wifi.h"
-#include "comms_events.h"
-#include "coap_client.h"
+#include "settings_spar7.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+
+static const char *TAG = "wifi";
+
 
 #if CONFIG_ESP_WIFI_AUTH_OPEN
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_OPEN
@@ -60,35 +61,60 @@ static void event_handler(void *arg, esp_event_base_t event_base,
         {
             esp_wifi_connect();
             s_retry_num++;
-            ESP_LOGD(LOG_TAG_WIFI, "Retry wifi connection #%d", s_retry_num);
-            comms_event_post(COMMS_WIFI_OFFLINE, NULL, 0);
+            ESP_LOGD(TAG, "Retry wifi connection #%d", s_retry_num);
         }
         else
         {
-            ESP_LOGE(LOG_TAG_WIFI, "Error connecting WiFi");
-            comms_event_post(COMMS_WIFI_ERROR, NULL, 0);
+            ESP_LOGE(TAG, "Error connecting WiFi");
         }
     }
     else if (event_base == WIFI_EVENT && event_id == ESP_ERR_WIFI_TIMEOUT)
     {
-        ESP_LOGE(LOG_TAG_WIFI, "WiFi connection Timeout");
-        comms_event_post(COMMS_WIFI_ERROR, NULL, 0);
+        ESP_LOGE(TAG, "WiFi connection Timeout");
     }
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
     {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(LOG_TAG_WIFI, "Got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-
-        wifi_info_t args;
-        sprintf(args.wifi_ip, IPSTR, IP2STR(&event->ip_info.ip));
-        comms_event_post(COMMS_WIFI_ONLINE, &args, sizeof(wifi_info_t));
-        comms_set_time(NULL);
+        ESP_LOGI(TAG, "Got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
     }
 }
 
-void wifi_init_sta(const char *ssid, const char *password)
+char wifi_ssid[SSID_MAX_LENGTH];
+char wifi_password[PASSWORD_MAX_LENGTH];
+
+void wifi_init_sta()
 {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("nvs", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+        return;
+    } 
+
+    size_t length;
+    length = SSID_MAX_LENGTH;
+    err = nvs_get_str(my_handle, "wifi_ssid", wifi_ssid, &length);
+    if (err != ESP_OK) 
+    {
+        ESP_LOGW(TAG, "No NVS entry for 'wifi_ssid'. Unable to connect. Set SSID suing 'set_wifi <ssid> <password> shell command.");
+        nvs_close(my_handle);
+        return;
+    }
+
+    length = PASSWORD_MAX_LENGTH;
+    err = nvs_get_str(my_handle, "wifi_password", wifi_password, &length);
+    if (err != ESP_OK) 
+    {
+        ESP_LOGW(TAG, "No NVS entry for 'wifi_password'. Unable to connect. Set SSID suing 'set_wifi <ssid> <password> shell command.");
+        nvs_close(my_handle);
+        return;
+    }
+
+    nvs_close(my_handle);
+
+
+
     ESP_ERROR_CHECK(esp_netif_init());
 
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -120,14 +146,14 @@ void wifi_init_sta(const char *ssid, const char *password)
                     .threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD,
                 },
         };
-    strcpy((char *)&(wifi_config.sta.ssid[0]), ssid);
-    strcpy((char *)&(wifi_config.sta.password[0]), password);
+    strcpy((char *)&(wifi_config.sta.ssid[0]), wifi_ssid);
+    strcpy((char *)&(wifi_config.sta.password[0]), wifi_password);
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGD(LOG_TAG_WIFI, "wifi_init_sta finished.");
+    ESP_LOGD(TAG, "wifi_init_sta finished.");
 }
 
 #define MAX_WIFI_BUF_SIZE 512
@@ -147,16 +173,11 @@ static SemaphoreHandle_t wifi_sem;
 
 static void send_receive_task();
 
-void wifi_connect(const char *ssid, const char *password)
+
+void wifi_connect()
 {
-    if ((NULL == ssid) || (0 == strlen(ssid)))
-    {
-        ESP_LOGE(LOG_TAG_WIFI, "Unable to connect to WiFi - no SSID");
-        comms_event_post(COMMS_WIFI_ERROR, NULL, 0);
-        return;
-    }
-    ESP_LOGI(LOG_TAG_WIFI, "Start WiFi connection");
-    wifi_init_sta(ssid, password);
+    ESP_LOGI(TAG, "Start WiFi connection");
+    wifi_init_sta();
     send_queue = xQueueCreate(1, sizeof(rxtxBuffer_t));
     receive_queue = xQueueCreate(1, sizeof(int));
     wifi_sem = xSemaphoreCreateBinary();
@@ -177,39 +198,41 @@ void wifi_connect(const char *ssid, const char *password)
 
 int wifi_send_and_receive(const uint8_t *txbuf, const size_t txlen, uint8_t *rxbuf, uint16_t *rxlen)
 {
-    xSemaphoreTake(wifi_sem, portMAX_DELAY);
-    rxtxBuffer_t tx_q_buf = {.txbuf = txbuf, .txsize = txlen, .rxbuf = rxbuf, .rxsize = rxlen};
-    if (xQueueSend(send_queue, &tx_q_buf, pdMS_TO_TICKS(10000)) != pdTRUE)
-    {
-        ESP_LOGE(LOG_TAG_COMMS, "Error posting to CoAP tx queue");
-        *rxlen = 0;
-        xSemaphoreGive(wifi_sem);
-        return COAP_SEND_ERROR;
-    }
+    return 0;
+    // xSemaphoreTake(wifi_sem, portMAX_DELAY);
+    // rxtxBuffer_t tx_q_buf = {.txbuf = txbuf, .txsize = txlen, .rxbuf = rxbuf, .rxsize = rxlen};
+    // if (xQueueSend(send_queue, &tx_q_buf, pdMS_TO_TICKS(10000)) != pdTRUE)
+    // {
+    //     ESP_LOGE(LOG_TAG_COMMS, "Error posting to CoAP tx queue");
+    //     *rxlen = 0;
+    //     xSemaphoreGive(wifi_sem);
+    //     return COAP_SEND_ERROR;
+    // }
 
-    int result = 0;
-    if (xQueueReceive(receive_queue, &result, pdMS_TO_TICKS(60000)) != pdTRUE)
-    {
-        ESP_LOGE(LOG_TAG_COMMS, "Error receiving from CoAP rx queue");
-        *rxlen = 0;
-        xSemaphoreGive(wifi_sem);
-        return COAP_SEND_ERROR;
-    }
+    // int result = 0;
+    // if (xQueueReceive(receive_queue, &result, pdMS_TO_TICKS(60000)) != pdTRUE)
+    // {
+    //     ESP_LOGE(LOG_TAG_COMMS, "Error receiving from CoAP rx queue");
+    //     *rxlen = 0;
+    //     xSemaphoreGive(wifi_sem);
+    //     return COAP_SEND_ERROR;
+    // }
 
-    xSemaphoreGive(wifi_sem);
-    return result;
+    // xSemaphoreGive(wifi_sem);
+    // return result;
+    
 }
 
 static void send_receive_task()
 {
-    while (1)
-    {
-        rxtxBuffer_t txbuffer;
-        if (xQueueReceive(send_queue, &txbuffer, pdMS_TO_TICKS(10000)) != pdTRUE)
-        {
-            continue;
-        }
-        int result = coap_client_send(txbuffer.txbuf, txbuffer.txsize, txbuffer.rxbuf, txbuffer.rxsize);
-        xQueueSend(receive_queue, &result, pdMS_TO_TICKS(10000));
-    }
+    // while (1)
+    // {
+    //     rxtxBuffer_t txbuffer;
+    //     if (xQueueReceive(send_queue, &txbuffer, pdMS_TO_TICKS(10000)) != pdTRUE)
+    //     {
+    //         continue;
+    //     }
+    //     int result = coap_client_send(txbuffer.txbuf, txbuffer.txsize, txbuffer.rxbuf, txbuffer.rxsize);
+    //     xQueueSend(receive_queue, &result, pdMS_TO_TICKS(10000));
+    // }
 }

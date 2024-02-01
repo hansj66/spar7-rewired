@@ -1,1 +1,1 @@
-python F:\espressif\esp-idf\components\spiffs\spiffsgen.py 0xF0000 certs\chain spiffs.bin
+python F:\espressif\esp-idf\components\spiffs\spiffsgen.py 0xF0000 certs spiffs.bin
