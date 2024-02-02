@@ -27,6 +27,7 @@ idf_component_register(
             console_spar7
             hal_spar7
             dtls
+            mbedtls
     )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-format")

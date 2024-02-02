@@ -28,6 +28,8 @@
 
 static const char *TAG = "wifi";
 
+char ip_address[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+
 
 #if CONFIG_ESP_WIFI_AUTH_OPEN
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_OPEN
@@ -76,6 +78,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        sprintf(ip_address, IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
     }
 }
@@ -156,36 +159,18 @@ void wifi_init_sta()
     ESP_LOGD(TAG, "wifi_init_sta finished.");
 }
 
-#define MAX_WIFI_BUF_SIZE 512
-
-typedef struct
-{
-    const uint8_t *txbuf;
-    uint8_t *rxbuf;
-    uint16_t txsize;
-    uint16_t *rxsize;
-    int result;
-} rxtxBuffer_t;
-
 static QueueHandle_t send_queue;
-static QueueHandle_t receive_queue;
-static SemaphoreHandle_t wifi_sem;
 
-static void send_receive_task();
+static void wifi_send_task();
 
 
 void wifi_connect()
 {
     ESP_LOGI(TAG, "Start WiFi connection");
     wifi_init_sta();
-    send_queue = xQueueCreate(1, sizeof(rxtxBuffer_t));
-    receive_queue = xQueueCreate(1, sizeof(int));
-    wifi_sem = xSemaphoreCreateBinary();
-    xSemaphoreGive(wifi_sem);
+    send_queue = xQueueCreate(1, sizeof(int32_t));
     TaskHandle_t rxtxTaskHandle = NULL;
-    // Pin the task to the core not running the LVGL thread. The DTLS code is quite resource intensive and
-    // makes the UI stutter when it connects and disconnects.
-    xTaskCreatePinnedToCore(send_receive_task, "wifi_rxtx", 12 * 1024, NULL, 6, &rxtxTaskHandle, 1);
+    xTaskCreatePinnedToCore(wifi_send_task, "wifi_tx", 12 * 1024, NULL, 6, &rxtxTaskHandle, 1);
     configASSERT(rxtxTaskHandle);
 }
 
@@ -223,8 +208,13 @@ int wifi_send_and_receive(const uint8_t *txbuf, const size_t txlen, uint8_t *rxb
     
 }
 
-static void send_receive_task()
+static void wifi_send_task()
 {
+    ESP_LOGI(TAG, "Wifi send task is running");
+    while (1)
+    {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
     // while (1)
     // {
     //     rxtxBuffer_t txbuffer;

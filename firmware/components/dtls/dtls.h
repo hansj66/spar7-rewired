@@ -3,7 +3,11 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "esp_err.h"
+// This is the certificate file. If the file is added as an include of sorts in
+// the
+#define CERTFILE "/spiffs/cert.crt"
+#define KEYFILE "/spiffs/17khh6llcban3n-key.key"
+
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/net_sockets.h"
@@ -13,24 +17,18 @@
 /**
  * Struct to hold the internal state of the DTLS connection.
  */
-typedef struct dtls_state_s
-{
-    mbedtls_net_context fd;
-    mbedtls_entropy_context entropy;
-    mbedtls_ssl_context ssl;
-    mbedtls_ssl_config conf;
-    mbedtls_ctr_drbg_context ctr_drbg;
-    mbedtls_timing_delay_context timer;
-    mbedtls_x509_crt all_certs;
-    mbedtls_pk_context private_key;
-    mbedtls_x509_crt *client_cert;
-    mbedtls_x509_crt *ca_chain;
+typedef struct dtls_state_s {
+  mbedtls_net_context fd;
+  mbedtls_entropy_context entropy;
+  mbedtls_ssl_context ssl;
+  mbedtls_ssl_config conf;
+  mbedtls_ctr_drbg_context ctr_drbg;
+  mbedtls_timing_delay_context timer;
+  mbedtls_x509_crt all_certs;
+  mbedtls_pk_context private_key;
+  mbedtls_x509_crt *client_cert;
+  mbedtls_x509_crt *ca_chain;
 } dtls_state_t;
-
-/**
- * Set up DTLS context, random generator and so on
- */
-bool dtls_setup(dtls_state_t *state);
 
 /**
  * Connect to the server.
@@ -51,5 +49,4 @@ size_t dtls_receive(dtls_state_t *state, void *buf, size_t len);
 /**
  * Close connection and release resources
  */
-void dtls_close(dtls_state_t *state);
-void dtls_shutdown(dtls_state_t *state);
+bool dtls_close(dtls_state_t *state);

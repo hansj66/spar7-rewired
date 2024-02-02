@@ -2,4 +2,5 @@ idf_component_register(SRCS "cmd_spar7.c"
                     INCLUDE_DIRS . ./../settings_spar7
                     REQUIRES 
                         console
-                        settings_spar7)
+                        settings_spar7
+                        dtls)

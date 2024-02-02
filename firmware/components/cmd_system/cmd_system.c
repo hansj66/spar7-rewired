@@ -29,6 +29,11 @@
 
 static const char *TAG = "cmd_system";
 
+extern char ip_address[16];
+extern const uint8_t FIRMWARE_VERSION_MAJOR;
+extern const uint8_t FIRMWARE_VERSION_MINOR;
+
+
 static void register_free(void);
 static void register_heap(void);
 static void register_version(void);
@@ -36,6 +41,7 @@ static void register_restart(void);
 static void register_tasks(void);
 static void register_log_level(void);
 static void register_dir(void);
+static void register_ip(void);
 
 
 void register_system_common(void)
@@ -47,17 +53,19 @@ void register_system_common(void)
     register_tasks();
     register_log_level();
     register_dir();
+    register_ip();
 }
 
 void register_system(void)
 {
     register_system_common();
-    // register_system_sleep();
 }
 
 /* 'version' command */
 static int get_version(int argc, char **argv)
 {
+    printf("Spar 7 firmware version: %d.%d\n", FIRMWARE_VERSION_MAJOR, FIRMWARE_VERSION_MINOR);
+
     const char *model;
     esp_chip_info_t info;
     uint32_t flash_size;
@@ -115,6 +123,24 @@ static void register_version(void)
     };
     ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
 }
+
+static int get_ip_address(int argc, char **argv)
+{
+    printf("IP address: %s\n", ip_address);
+    return 0;
+}
+
+static void register_ip(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "ip",
+        .help = "Get IP address",
+        .hint = NULL,
+        .func = &get_ip_address,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}
+
 
 static int list_files(int argc, char **argv)
 {

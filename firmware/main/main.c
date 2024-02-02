@@ -26,6 +26,11 @@
 #include "nvs_flash.h"
 #include "settings_spar7.h"
 #include "hal_spar7.h"
+#include "wifi.h"
+
+const uint8_t FIRMWARE_VERSION_MAJOR = 1;
+const uint8_t FIRMWARE_VERSION_MINOR = 0;
+
 
 static const char* LOGTAG = "SPAR7";
 
@@ -178,6 +183,9 @@ void app_main(void)
     get_debounce(COIN_EXIT_DEBOUNCE);
     get_debounce(HOPPER_DEBOUNCE);
 
+    // Connect to wifi (if we have the credentials stored in NVS)
+    wifi_connect();
+
     // Initialize GPIO
     init_gpio();
 
@@ -191,7 +199,7 @@ void app_main(void)
     // hopper_evt_queue =  xQueueCreate(MAX_HOPPER_QUEUE_SIZE, sizeof(hopper_event));
 
     // start console task
-    xTaskCreate(console_task, "Console Task", 4096, NULL, CONSOLE_TASK_PRIORITY, NULL);
+    xTaskCreate(console_task, "Console Task", 10 * 1024, NULL, CONSOLE_TASK_PRIORITY, NULL);
     // start game task
     xTaskCreate(game_task, "Spar7 Game Task", 4096, NULL, CONSOLE_TASK_PRIORITY, NULL);
 

@@ -4,12 +4,13 @@
 #include "cmd_spar7.h"
 #include "settings_spar7.h"
 #include <string.h>
+#include "dtls.h"
 
 static void register_config_debounce(void);
 static void register_debounce_info(void);
 static void register_config_wifi(void);
 static void register_wifi_info(void);
-static void register_config_endpoint(void);
+static void register_tx_test(void);
 
 
 static const char *TAG = "cmd_spar7";
@@ -20,7 +21,7 @@ void register_spar7(void)
     register_debounce_info();
     register_config_wifi();
     register_wifi_info();
-    register_config_endpoint();
+    register_tx_test();
 }
 
 static struct {
@@ -34,12 +35,6 @@ static struct {
     struct arg_str *password;
     struct arg_end *end;
 } wifi_args;
-
-static struct {
-    struct arg_str *ip;
-    struct arg_str *port;
-    struct arg_end *end;
-} endpoint_args;
 
 
 static int debounce_delay(int argc, char **argv)
@@ -171,29 +166,46 @@ static void register_wifi_info()
     ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
 }
 
+#define MESSAGE "Toodledoo!"
+#define HOST "data.lab5e.com"
+#define PORT "1234"
 
-static int set_endpoint(int argc, char **argv)
+static int tx_test(int argc, char **argv)
 {
-    ESP_LOGE(TAG, "set endpoint not implemented yet");
-    return -1;
+    dtls_state_t dtls;
+
+    if (!dtls_connect(&dtls, HOST, PORT)) 
+    {
+        dtls_close(&dtls);
+        return 2;
+    }
+  
+    printf("Connected to %s:%s\n", HOST, PORT);
+
+    if (!dtls_send(&dtls, MESSAGE, strlen(MESSAGE))) 
+    {
+        dtls_close(&dtls);
+        return 3;
+    }
+
+    printf("Sent message\n");
+
+    dtls_close(&dtls);
+    printf("Closed connection\n");
+    return 0;
 }
 
-static void register_config_endpoint(void)
-{
-    endpoint_args.ip = arg_str1(NULL, NULL, "<ip>", "Endpoint ip address");
-    endpoint_args.port = arg_str1(NULL, NULL, "<port>", "Endpoint port");
-    endpoint_args.end = arg_end(2);
 
-    const esp_console_cmd_t cmd = {
-        .command = "set_endpoint",
-        .help = "Set bookkeeping endpoint",
+
+static void register_tx_test()
+{
+     const esp_console_cmd_t cmd = {
+        .command = "txtest",
+        .help = "Send test packet to endpoint",
         .hint = NULL,
-        .func = &set_endpoint,
-        .argtable = &endpoint_args
+        .func = &tx_test,
     };
     ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
 }
-
-
 
 

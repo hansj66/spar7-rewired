@@ -49,7 +49,7 @@ idf.py monitor
 | get_delays  | Get information about current debounce / delay settings. |
 | set_delay  <hopper\|exit\|payout> \<ms\>  |  Set debounce delay for a switch group (hopper, coin exit or payout) in milliseconds.|
 | set_wifi \<ssid\> \<password\>  |  Set wifi ssid/password for your local network. (required for backend   functionality). |
-| set_endpoint  \<ip\> \<port\>  |  Set bookkeeping endpoint. |
+| ip  |  Get IP address. |
 | dir  |  Lists files in filesystem. |
 
 ## Necessary hardware changes.
@@ -76,6 +76,19 @@ Changing the hopper debounce delay to 250ms:
 ```
 set_delay hopper 250
 ```
+## IoT Backend Notes
+
+If you are using the [https://span.lab5e.com/](https://span.lab5e.com/) IoT backend, you will have to create a representation of your device and download the necessary certificates. (It's free to register and use for hobbyists level number of devices and data. You'll find all necessary information in the [Getting Started section](https://www.lab5e.com/docs/get_started/) of the documentation).
+
+1. Create a folder under firmware (firmware\certs) and drop the <deviceid>-cert.crt, the <deviceid>-key.key and the span-cert-chain.crt in this folder
+1. Concatenate <deviceid>-cert.crt and span-cert-chain.crt to a new 'cert.crt' file in the same folder (the device cert has to be the first certificate).
+
+This folder will automatically be flashed to the spiffs partition when you flash the firmware. If you set the wifi ssid and password using the command shell, the firmware will try to connect to your wifi. If successful, bookkeeping data will then be sent when coins are received or paid out from the game using dtls.
+
+The protocol is rather simple. Messages consist of one byte only. A positive number == coin in. A negative number == coins out. (I considered using protobuffers, but decided it would be overkill for now...)
+
+The Span backend provides data retention. It also has a REST api and various outputs that make it simple to write a small application/backend to retrieve these messages from Span at your convenience. [Example clients](https://www.lab5e.com/docs/backend/) are available for a wide variety of languages.
+
 
 
 
