@@ -6,7 +6,7 @@
 1. Download [espressif installer ](https://dl.espressif.com/dl/esp-idf/?idf=4.4)
 2. Configure environemnt variable IDF_PATH to point to espressif installation folder
 3. If using visual studio code: Install the espressif plugin
-4. Drop any certs into the certs/ folder. Any files dropped here will be packed into spiffs.bin, which in turn automatically  will be flashed to the spiffs partition. This is only necessary if you want to communicate using dtls over the wifi network.
+4. Drop any certs into the certs/ folder. Any files dropped here will be packed into spiffs.bin if you run the makespiffs.cmd script. The spiffs.bin file will in turn automatically be flashed to the spiffs partition when you flash the firmware. This is required if you want to communicate using dtls over the wifi network.
 
 ```
 idf.py build 
