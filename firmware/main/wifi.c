@@ -29,7 +29,7 @@
 static const char *TAG = "wifi";
 
 char ip_address[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-
+bool is_online = false;
 
 #if CONFIG_ESP_WIFI_AUTH_OPEN
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_OPEN
@@ -48,6 +48,13 @@ char ip_address[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 #elif CONFIG_ESP_WIFI_AUTH_WAPI_PSK
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WAPI_PSK
 #endif
+
+
+bool is_wifi_online()
+{
+    return is_online;
+}
+
 
 static int s_retry_num = 0;
 static void event_handler(void *arg, esp_event_base_t event_base,
@@ -79,6 +86,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         sprintf(ip_address, IPSTR, IP2STR(&event->ip_info.ip));
+        is_online = true;
         s_retry_num = 0;
     }
 }
@@ -159,70 +167,9 @@ void wifi_init_sta()
     ESP_LOGD(TAG, "wifi_init_sta finished.");
 }
 
-static QueueHandle_t send_queue;
-
-static void wifi_send_task();
-
-
 void wifi_connect()
 {
     ESP_LOGI(TAG, "Start WiFi connection");
     wifi_init_sta();
-    send_queue = xQueueCreate(1, sizeof(int32_t));
-    TaskHandle_t rxtxTaskHandle = NULL;
-    xTaskCreatePinnedToCore(wifi_send_task, "wifi_tx", 12 * 1024, NULL, 6, &rxtxTaskHandle, 1);
-    configASSERT(rxtxTaskHandle);
 }
 
-/*
- * The send and receive function uses two queues to pass the request and response buffers to a
- * separate CoAP/DTLS thread since DTLS requires a fair bit of stack space to run. Rather than setting
- * aside stack space in *all* threads we just use one thread with a (relatively) large stack- This will
- * also make it easier to pin the thread to a different core from the UI thread.
- */
-
-int wifi_send_and_receive(const uint8_t *txbuf, const size_t txlen, uint8_t *rxbuf, uint16_t *rxlen)
-{
-    return 0;
-    // xSemaphoreTake(wifi_sem, portMAX_DELAY);
-    // rxtxBuffer_t tx_q_buf = {.txbuf = txbuf, .txsize = txlen, .rxbuf = rxbuf, .rxsize = rxlen};
-    // if (xQueueSend(send_queue, &tx_q_buf, pdMS_TO_TICKS(10000)) != pdTRUE)
-    // {
-    //     ESP_LOGE(LOG_TAG_COMMS, "Error posting to CoAP tx queue");
-    //     *rxlen = 0;
-    //     xSemaphoreGive(wifi_sem);
-    //     return COAP_SEND_ERROR;
-    // }
-
-    // int result = 0;
-    // if (xQueueReceive(receive_queue, &result, pdMS_TO_TICKS(60000)) != pdTRUE)
-    // {
-    //     ESP_LOGE(LOG_TAG_COMMS, "Error receiving from CoAP rx queue");
-    //     *rxlen = 0;
-    //     xSemaphoreGive(wifi_sem);
-    //     return COAP_SEND_ERROR;
-    // }
-
-    // xSemaphoreGive(wifi_sem);
-    // return result;
-    
-}
-
-static void wifi_send_task()
-{
-    ESP_LOGI(TAG, "Wifi send task is running");
-    while (1)
-    {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-    // while (1)
-    // {
-    //     rxtxBuffer_t txbuffer;
-    //     if (xQueueReceive(send_queue, &txbuffer, pdMS_TO_TICKS(10000)) != pdTRUE)
-    //     {
-    //         continue;
-    //     }
-    //     int result = coap_client_send(txbuffer.txbuf, txbuffer.txsize, txbuffer.rxbuf, txbuffer.rxsize);
-    //     xQueueSend(receive_queue, &result, pdMS_TO_TICKS(10000));
-    // }
-}

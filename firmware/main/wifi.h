@@ -10,3 +10,5 @@
  */
 void wifi_connect();
 
+bool is_wifi_online();
+

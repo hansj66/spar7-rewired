@@ -12,6 +12,8 @@ static void register_config_wifi(void);
 static void register_wifi_info(void);
 static void register_tx_test(void);
 
+void send_bookkeeping_data(int8_t data);
+
 
 static const char *TAG = "cmd_spar7";
 
@@ -91,9 +93,9 @@ static void register_config_debounce(void)
 
 static int debounce_info(int argc, char **argv)
 {
-    printf("Payout switches delay: %d ms\n", get_debounce(PAYOUT_DEBOUNCE));
-    printf("Coin exit switchdelay: %d ms\n", get_debounce(COIN_EXIT_DEBOUNCE));
-    printf("Hopper switch delay:   %d ms\n", get_debounce(HOPPER_DEBOUNCE));
+    printf("Payout switches delay:  %d ms\n", get_debounce(PAYOUT_DEBOUNCE));
+    printf("Coin exit switc hdelay: %d ms\n", get_debounce(COIN_EXIT_DEBOUNCE));
+    printf("Hopper switch delay:    %d ms\n", get_debounce(HOPPER_DEBOUNCE));
     return 0;
 }
 
@@ -172,30 +174,30 @@ static void register_wifi_info()
 
 static int tx_test(int argc, char **argv)
 {
+    // send_bookkeeping_data(0);
+
     dtls_state_t dtls;
 
     if (!dtls_connect(&dtls, HOST, PORT)) 
     {
         dtls_close(&dtls);
-        return 2;
+        return 1;
     }
   
     printf("Connected to %s:%s\n", HOST, PORT);
 
-    if (!dtls_send(&dtls, MESSAGE, strlen(MESSAGE))) 
+    char message[] = {"Spar 7 says Hello!"};
+    if (!dtls_send(&dtls, message, strlen(message))) 
     {
-        dtls_close(&dtls);
-        return 3;
+        ESP_LOGE(TAG, "Failed to send data.");
     }
+    ESP_LOGI(TAG, "Sent message %s", message);
 
-    printf("Sent message\n");
-
-    dtls_close(&dtls);
+    dtls_close(&dtls);  // Probably not happening anytome soon...
     printf("Closed connection\n");
+
     return 0;
 }
-
-
 
 static void register_tx_test()
 {

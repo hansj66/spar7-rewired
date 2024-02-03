@@ -50,7 +50,6 @@ void configure_gpio_input()
 
 void display_digit(int digit)
 {
-  
     for (int i=0; i<4; i++)
     {
         gpio_set_level(GPIO_BCD_BASE+i, !BCD_matrix[digit][i]);

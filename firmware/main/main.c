@@ -27,12 +27,15 @@
 #include "settings_spar7.h"
 #include "hal_spar7.h"
 #include "wifi.h"
+#include "dtls.h"
 
 const uint8_t FIRMWARE_VERSION_MAJOR = 1;
 const uint8_t FIRMWARE_VERSION_MINOR = 0;
 
+#define HOST "data.lab5e.com"
+#define PORT "1234"
 
-static const char* LOGTAG = "SPAR7";
+static const char* TAG = "SPAR7";
 
 extern int PAYOUT_DELAY_MS;
 extern int COIN_EXIT_DELAY_MS;
@@ -41,9 +44,13 @@ extern int HOPPER_DELAY_MS;
 // Task priorities (higher numbers == higher priorities)
 //
 #define CONSOLE_TASK_PRIORITY 10
-
+#define GAME_TASK_PRIORITY 10
+#define SEND_TASK_PRIORITY 20
 // Max queue sizes
-#define MAX_SEND_QUEUE_SIZE 20
+#define MAX_COIN_QUEUE_SIZE 20
+
+
+void send_bookkeeping_data(int8_t data);
 
 // Bookkeeping
 //
@@ -52,8 +59,14 @@ int total_coins_out = 0;
 
 // Queues
 //
-// static QueueHandle_t hopper_evt_queue = NULL;
+static QueueHandle_t coin_evt_queue = NULL;
 
+void read_debounce_settings_from_nvs()
+{
+    get_debounce(PAYOUT_DEBOUNCE);
+    get_debounce(COIN_EXIT_DEBOUNCE);
+    get_debounce(HOPPER_DEBOUNCE);
+}
 
 static void console_task(void * arg)
 {
@@ -62,7 +75,10 @@ static void console_task(void * arg)
 
 static void game_task(void * arg)
 {
-  uint32_t regs = REG_READ(GPIO_IN_REG);
+    // Initialize display
+    display_digit(0);
+
+    uint32_t regs = REG_READ(GPIO_IN_REG);
     while  ((1ULL << GPIO_HOPPER) & ~regs)
     {
         regs = REG_READ(GPIO_IN_REG);
@@ -75,7 +91,7 @@ static void game_task(void * arg)
     {
         uint32_t regs = REG_READ(GPIO_IN_REG);
 
-        int payout = 0;
+        int8_t payout = 0;
 
         if  ((1ULL << GPIO_PAY2) & ~regs)
             payout = 2;
@@ -95,6 +111,8 @@ static void game_task(void * arg)
             printf("Payout: %d\n", payout);
             int countdown = payout;
             display_digit(countdown);
+
+            send_bookkeeping_data(-payout);
             
             // Wait for coin exit
             for (;;)
@@ -102,13 +120,12 @@ static void game_task(void * arg)
                 regs = REG_READ(GPIO_IN_REG);
                 if  ((1ULL << GPIO_COIN_EXIT) & ~regs)
                 {
-                    // TODO: send message: coins in + 1 
+                    send_bookkeeping_data((int8_t)1);
                     printf("Coin exit\n");
                     break;
                 }
                 vTaskDelay(COIN_EXIT_DELAY_MS / portTICK_PERIOD_MS);
             }
-
       
             // Do payout
             start_motor();
@@ -160,7 +177,53 @@ static void game_task(void * arg)
     }
 }
 
+void send_bookkeeping_data(int8_t data)
+{
+    if (is_wifi_online())
+    {
+        ESP_LOGI(TAG, "Sending bookkeeping data.");
+        xQueueSend(coin_evt_queue, &data,  pdMS_TO_TICKS(1000));
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Unable to send bookkeeping data (offline)");
+    }
+}
 
+
+static void send_task(void * arg)
+{
+    // Block until we're online and ready to sedn bookkeeping data
+    while (!is_wifi_online())
+    {
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+
+     dtls_state_t dtls;
+
+    if (!dtls_connect(&dtls, HOST, PORT)) 
+    {
+        dtls_close(&dtls);
+    }
+  
+    printf("Connected to %s:%s\n", HOST, PORT);
+
+   while (true)
+    {
+        int8_t data = 0;
+        if (pdTRUE == xQueueReceive(coin_evt_queue, &data, portMAX_DELAY))
+        {
+            if (!dtls_send(&dtls, &data, 1)) 
+            {
+                ESP_LOGE(TAG, "Failed to send bookkeeping data.");
+            }
+            ESP_LOGI(TAG, "Sent message %02X", data);
+        }
+    }
+
+    dtls_close(&dtls);  // Probably not happening anytome soon...
+    printf("Closed connection\n");
+}
 
 
 static void initialize_nvs(void)
@@ -178,30 +241,24 @@ void app_main(void)
 {
     // Initialize NVS
     initialize_nvs();
-    // Get global delay settings
-    get_debounce(PAYOUT_DEBOUNCE);
-    get_debounce(COIN_EXIT_DEBOUNCE);
-    get_debounce(HOPPER_DEBOUNCE);
-
+    // Get delay settings
+    read_debounce_settings_from_nvs();
     // Connect to wifi (if we have the credentials stored in NVS)
     wifi_connect();
-
-    // Initialize GPIO
+    // Ini tialize GPIO
     init_gpio();
-
-    // Initialize display
-    display_digit(0);
-
     // Initialize file system
     initialize_spiffs();
 
-    // Create a queue to handle hopper event
-    // hopper_evt_queue =  xQueueCreate(MAX_HOPPER_QUEUE_SIZE, sizeof(hopper_event));
+    // Create a queue to handle coin events
+    coin_evt_queue =  xQueueCreate(MAX_COIN_QUEUE_SIZE, sizeof(int8_t));
 
     // start console task
-    xTaskCreate(console_task, "Console Task", 10 * 1024, NULL, CONSOLE_TASK_PRIORITY, NULL);
+    xTaskCreate(console_task, "Console Task", 8192, NULL, CONSOLE_TASK_PRIORITY, NULL);
     // start game task
-    xTaskCreate(game_task, "Spar7 Game Task", 4096, NULL, CONSOLE_TASK_PRIORITY, NULL);
+    xTaskCreate(game_task, "Game Task", 4096, NULL, GAME_TASK_PRIORITY, NULL);
+    // start send task
+    xTaskCreate(send_task, "Send Task", 8192, NULL, SEND_TASK_PRIORITY, NULL);
 
     while (true)
     {

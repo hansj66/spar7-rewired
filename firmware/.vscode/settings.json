@@ -15,7 +15,8 @@
         "argtable3.h": "c",
         "esp_sleep.h": "c",
         "nvs.h": "c",
-        "esp_spiffs.h": "c"
+        "esp_spiffs.h": "c",
+        "debug.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
