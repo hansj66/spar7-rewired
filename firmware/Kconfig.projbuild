@@ -1,7 +1,0 @@
-menu "Spar 7 rewired configuration"
-
-    menu "COMMS"
-        source "main/Kconfig.comms"
-    endmenu
-
-endmenu
