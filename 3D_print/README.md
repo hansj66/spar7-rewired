@@ -8,5 +8,5 @@ Here you will find STL files for 3D printing the alternative hopper. STEP-files 
 3. Assembling thw hopper requires M3 6mm screws, M3 15 and 20mm screws
 4. The payout slide requires two soft springs (approx 20mm in length)
 
-![hopper side](pictures/hopper_side.png)
-![hopper iso](pictures/hopper_iso.png)
+![hopper side](../pictures/hopper_side.png)
+![hopper iso](../pictures/hopper_iso.png)
