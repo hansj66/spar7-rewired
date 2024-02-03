@@ -51,6 +51,8 @@ idf.py monitor
 | set_wifi \<ssid\> \<password\>  |  Set wifi ssid/password for your local network. (required for backend   functionality). |
 | ip  |  Get IP address. |
 | dir  |  Lists files in filesystem. |
+| txtest  |  Sends a hello world message to the backend. |
+
 
 ## Necessary hardware changes.
 
